@@ -1,0 +1,75 @@
+install docker 
+check create docker file 
+sudo usermod -aG docker jenkins
+sudo systemctl restart jenkins 
+
+docker hub -
+create token and use password , read and write 
+
+jenkins-
+credentials
+add new
+username and password 
+
+
+pipeline code -
+
+pipeline {
+    agent any
+    environment{
+        IMAGE_NAME="shubhamdadwal/shubh-jenkins"
+        CONTAINER_NAME= "shubh-jenkins-container"
+        DOCKER_CREDS= "dockerhub"
+    }
+
+    stages {
+        stage('git clone') {
+            steps {
+                git url: "https://github.com/shubhamdadwal1/jenkins-project-2.git", branch: "main"
+            }
+        }
+        stage("build image") {
+            steps {
+                sh 'docker build -t $IMAGE_NAME .'
+            }
+        }
+        stage("docker hub login "){
+            steps{
+                withCredentials([usernamePassword(
+                    credentialsId: DOCKER_CREDS,
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                    )])
+                    {
+                        sh 'echo $PASS | docker login -u $USER --password-stdin'
+                    }
+            }
+        }
+        stage("push image") {
+            steps {
+                sh 'docker push $IMAGE_NAME'
+            }
+        }
+        stage("delete old container") {
+            steps {
+                sh '''
+                 docker stop $CONTAINER_NAME || true
+                 docker rm $CONTAINER_NAME || true
+                 '''
+            }
+        }
+        stage("run container") {
+            steps {
+                sh '''
+                docker pull $IMAGE_NAME
+                docker run -d -p 8081:80 --name $CONTAINER_NAME $IMAGE_NAME'''
+            }
+        }
+        stage("logout") {
+            steps {
+                sh 'docker logout'
+            }
+        }
+    }
+}
+

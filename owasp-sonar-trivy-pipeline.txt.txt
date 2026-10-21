@@ -1,0 +1,89 @@
+pipeline{
+    agent any 
+    environment{
+        IMAGE_NAME="shubh-img"
+        CONTAINER_NAME="shubh-cont"
+        TAG="01"
+    }
+    stages{
+    stage(" Git clone"){
+        steps {
+            git url: "https://github.com/shubhamdadwal1/restaurant.git", branch: "master"
+        }
+    }
+    stage('owasp dependency check') {
+    steps {
+        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+            dependencyCheck(
+                odcInstallation: 'owasp',
+                additionalArguments: '--scan ./'
+            )
+
+            dependencyCheckPublisher(
+                pattern: '**/dependency-check-report.xml'
+            )
+         }
+      }
+    }
+    stage("sonarqube analysis"){
+        steps{
+            script{
+                def sonarhome= tool 'sonar-scanner'
+                withSonarQubeEnv('sonar'){
+                    withCredentials([string(
+                        credentialsId: "sonar",
+                        variable: "SONAR_TOKEN"
+                        )]){
+                            sh """
+                            ${sonarhome}/bin/sonar-scanner \
+                            -Dsonar.projectName=app \
+                            -Dsonar.projectKey=app \
+                            -Dsonar.sources=. \
+                            -Dsonar.host.url=http://65.0.131.226:9000 \
+                            -Dsonar.login=$SONAR_TOKEN
+                            """
+                        }
+                 }
+             }
+          }
+        }
+        stage("trivy file scan system"){
+            steps{
+                sh 'trivy fs . >trivy-report.txt'
+            }
+        }
+        stage('check docker image'){
+            steps{
+                sh 'docker images'
+            }
+        }
+        stage('build docker image'){
+            steps{
+                sh 'docker build -t ${IMAGE_NAME}:${TAG} .'
+            }
+        }
+        stage('check docker container'){
+            steps{
+                sh 'docker ps'
+            }
+        }
+        stage("stop and delete working docker container"){
+            steps{
+                sh '''
+                docker stop ${CONTAINER_NAME} || true
+                docker rm ${CONTAINER_NAME} || true
+                '''
+            }
+        }
+        stage("run docker container"){
+            steps{
+                sh 'docker run -d -p 80:80 --name ${CONTAINER_NAME} ${IMAGE_NAME}:${TAG}'
+            }
+        }
+        stage("docker logout"){
+            steps{
+                sh "docker logout"
+            }
+        }
+    }
+}
